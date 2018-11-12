@@ -19,12 +19,22 @@ type Connection struct {
 	portConfig *serial.Config
 	port       *serial.Port
 	counter    uint8
-	partNumber string
+	ecuDetails *ECUDetails
 }
 
-func Connect() Connection {
+type ECUDetails struct {
+	PartNumber string
+	Details []string
+}
+
+type Callbacks struct {
+	ECUDetails func(*ECUDetails)
+	Measurement func(*Measurement)
+}
+
+func Connect(portName string) (*Connection, error) {
 	c := &serial.Config{
-		Name:        "/dev/obd",
+		Name:        portName,
 		Baud:        portDefaultBaud,
 		ReadTimeout: 300 * time.Millisecond,
 	}
@@ -33,13 +43,25 @@ func Connect() Connection {
 		portConfig: c,
 	}
 
-	_ = conn.Open()
+	var err error
+	if err = conn.open(); err != nil {
+		return nil, err
+	}
 
 	// TODO: try different baud rates
-	return conn
+
+	if err = conn.init(); err != nil {
+		return nil, errors.Wrapf(err, "initialization sequence failed")
+	}
+
+	if conn.ecuDetails, err = conn.startupPhase(); err != nil {
+		return nil, errors.Wrapf(err, "startup phase failed")
+	}
+
+	return &conn, nil
 }
 
-func (c *Connection) Open() error {
+func (c *Connection) open() error {
 	var err error
 	c.port, err = serial.OpenPort(c.portConfig)
 	if err != nil {
@@ -87,9 +109,7 @@ func (c *Connection) init() error {
 
 	// empty receive buffer (i.e. see if there's any values that need to be read)
 
-	c.partNumber = ""
-
-	baudDelay := time.Second / initBaud
+	const baudDelay = time.Second / initBaud
 
 	log.Printf("starting initialization handshake with ECU at %d baud", initBaud)
 
@@ -142,7 +162,7 @@ func (c *Connection) init() error {
 	}
 
 	log.Debugf("received sync byte values {%#x, %#x, %#x}", buf[0], buf[1], buf[2])
-	if !bytes.Equal(buf[:3], []byte{0x55, 0x01, 0x8a}) {
+	if !bytes.Equal(buf, []byte{0x55, 0x01, 0x8a}) {
 		return errPortBaud
 	}
 	log.Printf("received expected sync byte sequence")
@@ -155,6 +175,41 @@ func (c *Connection) init() error {
 
 	log.Printf("initialization complete")
 	return nil
+}
+
+// After initialization handshake is complete, the ECU sends unsolicited blocks that contain ECU details
+func (c *Connection) startupPhase() (*ECUDetails, error) {
+	ecuDetails := &ECUDetails{
+		Details: make([]string, 3),
+	}
+
+	for {
+		blk, err := c.recvBlock()
+		if err != nil {
+			return nil, errors.Wrapf(err, "error reading block")
+		}
+
+		if err := c.sendBlock(&Block{Type: BlockTypeACK}); err != nil {
+			return nil, errors.Wrapf(err, "unable to send ack")
+		}
+
+		switch blk.Type {
+		case BlockTypeACK:
+			log.Info("received ack from ecu, completed startup phase")
+			return ecuDetails, nil
+
+		case BlockTypeASCII:
+			str := strings.TrimSpace(string(blk.Data))
+			if ecuDetails.PartNumber == "" {
+				ecuDetails.PartNumber = str
+			} else {
+				ecuDetails.Details = append(ecuDetails.Details, str)
+			}
+
+		default:
+			return nil, errors.Errorf("expected ascii block type but received", blk.Type)
+		}
+	}
 }
 
 func (c *Connection) recvBlock() (*Block, error) {
@@ -203,81 +258,7 @@ func (c *Connection) recvBlock() (*Block, error) {
 	return blk, nil
 }
 
-func complement(val byte) byte {
-	return 0xff - val
-}
-
-func (c *Connection) readEcho(val byte) error {
-	// read echo
-	buf := make([]byte, 1)
-	if _, err := c.port.Read(buf); err != nil {
-		return err
-	}
-	if buf[0] != val {
-		return errors.Errorf("expecting echo %#x but received %#x", val, buf[0])
-	}
-	return nil
-}
-
-func (c *Connection) recvByte() (byte, error) {
-	// read byte
-	buf := make([]byte, 1)
-	if _, err := c.port.Read(buf); err != nil {
-		return 0, err
-	}
-	value := buf[0]
-	if err := c.sendByte(complement(value)); err != nil {
-		return 0, err
-	}
-
-	return value, nil
-}
-
-func (c *Connection) sendByteAck(b byte) error {
-	if err := c.sendByte(b); err != nil {
-		return err
-	}
-	buf := make([]byte, 1)
-	if _, err := c.port.Read(buf); err != nil {
-		return errors.Wrap(err, "unable to read complement value")
-	}
-	if buf[0] != complement(b) {
-		return errors.Errorf("expected complement %#x but received %#x", complement(b), buf[0])
-	}
-	return nil
-}
-
-func (c *Connection) sendByte(b byte) error {
-	s, err := c.port.Write([]byte{b})
-	if s != 1 || err != nil {
-		if err != nil {
-			return err
-		}
-		return errors.New("did not write expected number of bytes")
-	}
-	return c.readEcho(b)
-}
-
-func (c *Connection) setBit(one bool) error {
-	if one {
-		if err := c.port.SetBreakOff(); err != nil {
-			return err
-		}
-		if err := c.port.SetRtsOff(); err != nil {
-			return err
-		}
-	} else {
-		if err := c.port.SetBreakOn(); err != nil {
-			return err
-		}
-		if err := c.port.SetRtsOn(); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (c *Connection) sendBlk(blk *Block) error {
+func (c *Connection) sendBlock(blk *Block) error {
 	log.WithFields(log.Fields{
 		"type":    blk.Type,
 		"size":    blk.Size(),
@@ -303,75 +284,37 @@ func (c *Connection) sendBlk(blk *Block) error {
 	return c.sendByte(BlockEnd)
 }
 
-func Run() error {
-	log.Println("kw1281 starting...")
-	c := Connect()
-	defer c.Close()
+func (c *Connection) Start(cb Callbacks) error {
+	if cb.ECUDetails != nil {
+		cb.ECUDetails(c.ecuDetails)
+	}
 	for {
-		if err := c.init(); err != nil {
-			log.Errorf("initialization sequence failed: %v", err)
-			c.Close()
-			for errOpen := c.Open(); errOpen != nil; {
-				time.Sleep(time.Second)
-			}
-			continue
+		blk, err := c.recvBlock()
+		if err != nil {
+			return errors.Wrapf(err, "error reading block")
 		}
-		// expect the device specification
-		startupPhase := true
 
-		for {
-			blk, err := c.recvBlock()
+		switch blk.Type {
+		case BlockTypeGroup:
+			m, err := blk.convert()
 			if err != nil {
-				log.Errorln("error when reading block, re-initializing...", err)
-				break
+				return errors.Wrapf(err, "unable to decode measuring block")
 			}
+			if cb.Measurement != nil {
+				cb.Measurement(m)
+			}
+		}
 
-			// ECU sends unsolicited information about itself, terminated with an ACK block
-			if startupPhase {
-				if blk.Type == BlockTypeACK {
-					log.Println("received ack from ecu, completed startup phase")
-					startupPhase = false
-				} else {
-					if blk.Type != BlockTypeASCII {
-						log.Println("expected ascii block type but received", blk.Type)
-						break
-					}
-					str := strings.TrimSpace(string(blk.Data))
-					if c.partNumber == "" {
-						c.partNumber = str
-						log.Println("received part number", c.partNumber)
-					} else {
-						log.Infof("details: %s", str)
-					}
-				}
-				if err := c.sendBlk(&Block{Type: BlockTypeACK}); err != nil {
-					log.Errorln("unable to send ack", err)
-					break
-				}
-				continue
-			}
-
-			switch blk.Type {
-			case BlockTypeGroup:
-				m, err := blk.convert()
-				if err != nil {
-					log.Errorln("unable to decode measuring block: %v", err)
-				} else {
-					log.Println("measuring block: %s", m.String())
-				}
-			}
-
-			var sendBlk *Block
-			switch blk.Type {
-			case BlockTypeACK:
-				sendBlk = MeasurementRequestBlock(0x03)
-			default:
-				sendBlk = &Block{Type: BlockTypeACK}
-			}
-			if err := c.sendBlk(sendBlk); err != nil {
-				log.Errorln("unable to send block type %v in response to block type %v",
-					sendBlk.Type, blk.Type)
-			}
+		var sendBlk *Block
+		switch blk.Type {
+		case BlockTypeACK:
+			sendBlk = MeasurementRequestBlock(0x03)
+		default:
+			sendBlk = &Block{Type: BlockTypeACK}
+		}
+		if err := c.sendBlock(sendBlk); err != nil {
+			return errors.Wrapf(err, "unable to send block type %v in response to block type %v",
+				sendBlk.Type, blk.Type)
 		}
 	}
 }
