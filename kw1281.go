@@ -4,32 +4,48 @@ import (
 	"bytes"
 	"github.com/jd3nn1s/serial"
 	"github.com/pkg/errors"
+	"io"
 	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 )
 
-const initBaud = 5
-const portDefaultBaud = 9600
+const (
+	initBaud        = 5
+	portDefaultBaud = 9600
+	minBlkLength    = 3
+)
 
 var errPortBaud = errors.New("wrong serial port baud detected")
 
+type SerialPort interface {
+	Flush() error
+	SetDtrOff() error
+	SetDtrOn() error
+	SetRtsOff() error
+	SetRtsOn() error
+	SetBreakOff() error
+	SetBreakOn() error
+	io.ReadWriteCloser
+}
+
 type Connection struct {
 	portConfig *serial.Config
-	port       *serial.Port
+	port       SerialPort
 	counter    uint8
 	ecuDetails *ECUDetails
+	nextBlock  chan *Block
 }
 
 type ECUDetails struct {
 	PartNumber string
-	Details []string
+	Details    []string
 }
 
 type Callbacks struct {
-	ECUDetails func(*ECUDetails)
-	Measurement func(*Measurement)
+	ECUDetails  func(*ECUDetails)
+	Measurement func(groupNum int, measurement *Measurement)
 }
 
 func Connect(portName string) (*Connection, error) {
@@ -41,6 +57,8 @@ func Connect(portName string) (*Connection, error) {
 
 	conn := Connection{
 		portConfig: c,
+		// buffer of 1
+		nextBlock: make(chan *Block, 1),
 	}
 
 	var err error
@@ -61,9 +79,14 @@ func Connect(portName string) (*Connection, error) {
 	return &conn, nil
 }
 
+// allow mocking
+var openPort = func(config *serial.Config) (SerialPort, error) {
+	return serial.OpenPort(config)
+}
+
 func (c *Connection) open() error {
 	var err error
-	c.port, err = serial.OpenPort(c.portConfig)
+	c.port, err = openPort(c.portConfig)
 	if err != nil {
 		return err
 	}
@@ -180,7 +203,7 @@ func (c *Connection) init() error {
 // After initialization handshake is complete, the ECU sends unsolicited blocks that contain ECU details
 func (c *Connection) startupPhase() (*ECUDetails, error) {
 	ecuDetails := &ECUDetails{
-		Details: make([]string, 3),
+		Details: make([]string, 0, 3),
 	}
 
 	for {
@@ -195,19 +218,22 @@ func (c *Connection) startupPhase() (*ECUDetails, error) {
 
 		switch blk.Type {
 		case BlockTypeACK:
+			if len(ecuDetails.PartNumber) == 0 {
+				return nil, errors.New("did not receive part number before startup ack")
+			}
 			log.Info("received ack from ecu, completed startup phase")
 			return ecuDetails, nil
 
 		case BlockTypeASCII:
 			str := strings.TrimSpace(string(blk.Data))
-			if ecuDetails.PartNumber == "" {
+			if len(ecuDetails.PartNumber) == 0 {
 				ecuDetails.PartNumber = str
 			} else {
 				ecuDetails.Details = append(ecuDetails.Details, str)
 			}
 
 		default:
-			return nil, errors.Errorf("expected ascii block type but received", blk.Type)
+			return nil, errors.Errorf("expected ascii block type but received %d", blk.Type)
 		}
 	}
 }
@@ -221,17 +247,21 @@ func (c *Connection) recvBlock() (*Block, error) {
 	counter, err := c.recvByte()
 	log.Debugf("counter value received: %d", counter)
 
+	if blkLength < minBlkLength {
+		return nil, errors.Errorf("block minimum length is %v but received %v", minBlkLength, blkLength)
+	}
+
 	if counter != c.counter {
 		return nil, errors.Errorf("unexpected counter value %d received", counter)
 	}
 
 	blkByteType, err := c.recvByte()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "unable to receive blk type byte")
 	}
 
 	// account for length, counter and block type
-	blkLength -= 3
+	blkLength -= minBlkLength
 
 	buf := make([]byte, blkLength)
 	for i := 0; i < int(blkLength); i++ {
@@ -248,7 +278,7 @@ func (c *Connection) recvBlock() (*Block, error) {
 	// check for block end
 	buf = make([]byte, 1)
 	if _, err := c.port.Read(buf); err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "unable to read block end")
 	}
 	if buf[0] != BlockEnd {
 		return nil, errors.Errorf("expecting byte %#x but received %#x", BlockEnd, buf[0])
@@ -294,6 +324,14 @@ func (c *Connection) Start(cb Callbacks) error {
 			return errors.Wrapf(err, "error reading block")
 		}
 
+		sendBlk := &Block{Type: BlockTypeACK}
+		select {
+		case sendBlk = <-c.nextBlock:
+			log.WithField("blockType", sendBlk.Type).Debug("sending non-ack block to ecu")
+		default:
+			log.Debug("sending ack block to ecu")
+		}
+
 		switch blk.Type {
 		case BlockTypeGroup:
 			m, err := blk.convert()
@@ -301,20 +339,20 @@ func (c *Connection) Start(cb Callbacks) error {
 				return errors.Wrapf(err, "unable to decode measuring block")
 			}
 			if cb.Measurement != nil {
-				cb.Measurement(m)
+				cb.Measurement(int(blk.Data[0]), m)
 			}
 		}
 
-		var sendBlk *Block
-		switch blk.Type {
-		case BlockTypeACK:
-			sendBlk = MeasurementRequestBlock(0x03)
-		default:
-			sendBlk = &Block{Type: BlockTypeACK}
-		}
 		if err := c.sendBlock(sendBlk); err != nil {
 			return errors.Wrapf(err, "unable to send block type %v in response to block type %v",
 				sendBlk.Type, blk.Type)
 		}
+	}
+}
+
+func (c *Connection) RequestMeasurementGroup(groupNum int) {
+	c.nextBlock <- &Block{
+		Type: BlockTypeGetGroup,
+		Data: []byte{byte(groupNum)},
 	}
 }

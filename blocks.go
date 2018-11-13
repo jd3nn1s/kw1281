@@ -61,13 +61,6 @@ func (b *Block) convert() (*Measurement, error) {
 	return &ret, nil
 }
 
-func MeasurementRequestBlock(groupNumber int) *Block {
-	return &Block{
-		Type: BlockTypeGetGroup,
-		Data: []byte{byte(groupNumber)},
-	}
-}
-
 func (b *Block) Size() int {
 	// length, type and counter bytes are included
 	return len(b.Data) + 3
@@ -76,13 +69,13 @@ func (b *Block) Size() int {
 func (m *Measurement) String() string {
 	switch m.Type {
 	case MeasurementTypeInt:
-		return fmt.Sprintf("%v %s\n", m.IntVal, m.Units)
+		return fmt.Sprintf("%v %s", m.IntVal, m.Units)
 	case MeasurementTypeFloat:
-		return fmt.Sprintf("%v %s\n", m.FloatVal, m.Units)
+		return fmt.Sprintf("%v %s", m.FloatVal, m.Units)
 	case MeasurementTypeString:
-		return fmt.Sprintf("%s\n", m.StringVal)
+		return fmt.Sprintf("%s", m.StringVal)
 	case MeasurementTypeBitmask:
-		return fmt.Sprintf("%08b\n", m.BitsVal&m.BitmaskVal)
+		return fmt.Sprintf("%08b", m.BitsVal&m.BitmaskVal)
 	}
 	return "(unknown type)"
 }
