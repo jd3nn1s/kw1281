@@ -1,6 +1,7 @@
 package kw1281
 
 import (
+	"context"
 	"github.com/jd3nn1s/serial"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -208,7 +209,20 @@ func TestSendBlockCounterRollover(t *testing.T) {
 	assert.Equal(t, byte(0), sentBytes[1], "counter rolled over correctly")
 }
 
+func noDelays() func() {
+	// for tests, remove sleeps
+	origBaudDelay := baudDelay
+	origResetDelay := resetDelay
+	baudDelay = 0
+	resetDelay = 0
+	return func() {
+		baudDelay = origBaudDelay
+		resetDelay = origResetDelay
+	}
+}
+
 func TestStartupPhaseNoDetails(t *testing.T) {
+	defer noDelays()()
 	c, m := connection()
 	counter := uint8(1)
 
@@ -231,6 +245,8 @@ func stageStartupPhaseData(m *MockSerialPort, counter *uint8) {
 }
 
 func TestStartupPhaseWithDetails(t *testing.T) {
+	defer noDelays()()
+
 	c, m := connection()
 	counter := uint8(1)
 
@@ -245,6 +261,7 @@ func TestStartupPhaseWithDetails(t *testing.T) {
 }
 
 func TestConnectClose(t *testing.T) {
+	defer noDelays()()
 	m := &MockSerialPort{}
 	oldOpenPort := openPort
 	openPort = func(config *serial.Config) (SerialPort, error) {
@@ -312,7 +329,7 @@ func TestStartCallbacks(t *testing.T) {
 
 	// queue up message group request that will be sent first
 	c.RequestMeasurementGroup(1)
-	err := c.Start(cb)
+	err := c.Start(context.Background(), cb)
 	assert.Error(t, err)
 	assert.Equal(t, io.EOF, errors.Cause(err))
 
@@ -328,7 +345,7 @@ func TestStartErrors(t *testing.T) {
 	ecuSendBytes(m, &counter, BlockTypeACK, []byte{})
 	ecuSendBytes(m, &counter, BlockTypeMeasurementGroup, []byte{})
 
-	err := c.Start(Callbacks{})
+	err := c.Start(context.Background(), Callbacks{})
 	assert.Error(t, err)
 	assert.NotEqual(t, io.EOF, errors.Cause(err))
 }
@@ -341,7 +358,7 @@ func TestStartSendRequest(t *testing.T) {
 	ecuSendBytes(m, &counter, BlockTypeACK, []byte{})
 
 	// ECU send ACK for get group
-	ecuSendBytes(m, &counter, BlockTypeGetMeasurementGroup, []byte{byte(MeasureRPMSpeedBlockNum)})
+	ecuSendBytes(m, &counter, BlockTypeGetMeasurementGroup, []byte{byte(GroupRPMSpeedBlockNum)})
 	ecuSendBytes(m, &counter, BlockTypeMeasurementGroup, []byte{
 		0x01, 0x30, 0x30, // each metric is 3 bytes
 		0x01, 0x30, 0x30,
@@ -351,15 +368,15 @@ func TestStartSendRequest(t *testing.T) {
 	ecuSendBytes(m, &counter, BlockTypeACK, []byte{})
 	ecuSendBytes(m, &counter, BlockTypeACK, []byte{})
 
-	c.RequestMeasurementGroup(MeasureRPMSpeedBlockNum)
+	c.RequestMeasurementGroup(GroupRPMSpeedBlockNum)
 
 	cbResults := struct {
 		Measurement bool
 	}{}
-	err := c.Start(Callbacks{
+	err := c.Start(context.Background(), Callbacks{
 		Measurement: func(group MeasurementGroup, measurements []*Measurement) {
 			cbResults.Measurement = true
-			assert.Equal(t, MeasureRPMSpeedBlockNum, group)
+			assert.Equal(t, GroupRPMSpeedBlockNum, group)
 			assert.Len(t, measurements, 3)
 		},
 	})

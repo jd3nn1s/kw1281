@@ -3,10 +3,10 @@ package kw1281
 type MeasurementGroup int
 
 const (
-	MeasureRPMCoolantTemp                  MeasurementGroup = 1
-	MeasureRPMBatteryInjectionTimeBlockNum MeasurementGroup = 2
-	MeasureRPMThrottleIntakeAirBlockNum    MeasurementGroup = 3
-	MeasureRPMSpeedBlockNum                MeasurementGroup = 4
+	GroupRPMCoolantTemp                  MeasurementGroup = 1
+	GroupRPMBatteryInjectionTimeBlockNum MeasurementGroup = 2
+	GroupRPMThrottleIntakeAirBlockNum    MeasurementGroup = 3
+	GroupRPMSpeedBlockNum                MeasurementGroup = 4
 )
 
 type Metric int
@@ -24,16 +24,16 @@ const (
 var MeasurementMap = map[MeasurementGroup]struct {
 	Metric [3]Metric
 }{
-	MeasureRPMCoolantTemp: {
+	GroupRPMCoolantTemp: {
 		[3]Metric{MetricRPM, MetricCoolantTemp, 0},
 	},
-	MeasureRPMBatteryInjectionTimeBlockNum: {
+	GroupRPMBatteryInjectionTimeBlockNum: {
 		[3]Metric{MetricRPM, MetricBatteryVoltage, MetricInjectionTime},
 	},
-	MeasureRPMThrottleIntakeAirBlockNum: {
+	GroupRPMThrottleIntakeAirBlockNum: {
 		[3]Metric{MetricRPM, MetricThrottleAngle, MetricAirIntakeTemp},
 	},
-	MeasureRPMSpeedBlockNum: {
+	GroupRPMSpeedBlockNum: {
 		[3]Metric{MetricRPM, MetricSpeed, 0},
 	},
 }

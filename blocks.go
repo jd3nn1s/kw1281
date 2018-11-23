@@ -21,22 +21,12 @@ const (
 	BlockEnd byte = 0x03
 )
 
-type MeasurementType int
-
-const (
-	MeasurementTypeInt MeasurementType = iota
-	MeasurementTypeFloat
-	MeasurementTypeString
-	MeasurementTypeBitmask
-)
-
 type Block struct {
 	Type BlockType
 	Data []byte
 }
 
 type MeasurementValue struct {
-	Type  MeasurementType
 	Value interface{}
 	Units string
 }

@@ -2,6 +2,7 @@ package kw1281
 
 import (
 	"bytes"
+	"context"
 	"github.com/jd3nn1s/serial"
 	"github.com/pkg/errors"
 	"io"
@@ -18,6 +19,9 @@ const (
 )
 
 var errPortBaud = errors.New("wrong serial port baud detected")
+
+var baudDelay = time.Second / initBaud
+var resetDelay = time.Millisecond * 300
 
 type SerialPort interface {
 	Flush() error
@@ -98,28 +102,28 @@ func (c *Connection) Close() error {
 }
 
 /*
-IOCTL_SERIAL_SET_BREAK_ON
-IOCTL_SERIAL_SET_RTS
-IOCTL_SERIAL_CLR_DTR
-IOCTL_SERIAL_SET_BREAK_OFF -> start bit?
-IOCTL_SERIAL_CLR_RTS
-IOCTL_SERIAL_SET_BREAK_ON -> 0
-IOCTL_SERIAL_SET_RTS
-IOCTL_SERIAL_SET_BREAK_ON -> 0
-IOCTL_SERIAL_SET_RTS
-IOCTL_SERIAL_SET_BREAK_ON -> 0
-IOCTL_SERIAL_SET_RTS
-IOCTL_SERIAL_SET_BREAK_ON -> 0
-IOCTL_SERIAL_SET_RTS
-IOCTL_SERIAL_SET_BREAK_ON -> 0
-IOCTL_SERIAL_SET_RTS
-IOCTL_SERIAL_SET_BREAK_ON -> 0
-IOCTL_SERIAL_SET_RTS
-IOCTL_SERIAL_SET_BREAK_ON -> 0
-IOCTL_SERIAL_SET_RTS
-IOCTL_SERIAL_SET_BREAK_OFF -> 1
-IOCTL_SERIAL_CLR_RTS
-IOCTL_SERIAL_SET_DTR
+	IOCTL_SERIAL_SET_BREAK_ON
+	IOCTL_SERIAL_SET_RTS
+	IOCTL_SERIAL_CLR_DTR
+	IOCTL_SERIAL_SET_BREAK_OFF -> start bit?
+	IOCTL_SERIAL_CLR_RTS
+	IOCTL_SERIAL_SET_BREAK_ON -> 0
+	IOCTL_SERIAL_SET_RTS
+	IOCTL_SERIAL_SET_BREAK_ON -> 0
+	IOCTL_SERIAL_SET_RTS
+	IOCTL_SERIAL_SET_BREAK_ON -> 0
+	IOCTL_SERIAL_SET_RTS
+	IOCTL_SERIAL_SET_BREAK_ON -> 0
+	IOCTL_SERIAL_SET_RTS
+	IOCTL_SERIAL_SET_BREAK_ON -> 0
+	IOCTL_SERIAL_SET_RTS
+	IOCTL_SERIAL_SET_BREAK_ON -> 0
+	IOCTL_SERIAL_SET_RTS
+	IOCTL_SERIAL_SET_BREAK_ON -> 0
+	IOCTL_SERIAL_SET_RTS
+	IOCTL_SERIAL_SET_BREAK_OFF -> 1
+	IOCTL_SERIAL_CLR_RTS
+	IOCTL_SERIAL_SET_DTR
 */
 func (c *Connection) init() error {
 	// when a serial port is idle and no value is being sent, it is in logical state 1
@@ -131,8 +135,6 @@ func (c *Connection) init() error {
 	// send the ECU address
 
 	// empty receive buffer (i.e. see if there's any values that need to be read)
-
-	const baudDelay = time.Second / initBaud
 
 	log.Printf("starting initialization handshake with ECU at %d baud", initBaud)
 
@@ -147,7 +149,7 @@ func (c *Connection) init() error {
 	if err := c.setBit(true); err != nil {
 		return err
 	}
-	time.Sleep(time.Millisecond * 300)
+	time.Sleep(resetDelay)
 
 	if err := c.setBit(false); err != nil {
 		return err
@@ -314,11 +316,13 @@ func (c *Connection) sendBlock(blk *Block) error {
 	return c.sendByte(BlockEnd)
 }
 
-func (c *Connection) Start(cb Callbacks) error {
+func (c *Connection) Start(ctx context.Context, cb Callbacks) error {
 	if cb.ECUDetails != nil {
 		cb.ECUDetails(c.ecuDetails)
 	}
 	var measurementGroup MeasurementGroup
+	// as the ECU communicates at the incredible speed of 9600bps communicating a
+	// single byte at a time with ACK we use a busy loop to get data as fast as possible
 	for {
 		blk, err := c.recvBlock()
 		if err != nil {
@@ -352,6 +356,13 @@ func (c *Connection) Start(cb Callbacks) error {
 		if err := c.sendBlock(sendBlk); err != nil {
 			return errors.Wrapf(err, "unable to send block type %v in response to block type %v",
 				sendBlk.Type, blk.Type)
+		}
+
+		select {
+		case <-ctx.Done():
+			log.Infof("context: %v", ctx.Err())
+			return nil
+		default:
 		}
 	}
 }
