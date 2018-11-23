@@ -57,13 +57,13 @@ func TestConvert(t *testing.T) {
 
 		switch m.Type {
 		case MeasurementTypeInt:
-			assert.Equal(t, input.ExpectedValue, m.IntVal, "not equal for input %v", n)
+			assert.Equal(t, input.ExpectedValue, m.Value, "not equal for input %v", n)
 		case MeasurementTypeFloat:
-			assert.Equal(t, input.ExpectedValue, m.FloatVal, "not equal for input %v", n)
+			assert.Equal(t, input.ExpectedValue, m.Value, "not equal for input %v", n)
 		case MeasurementTypeString:
-			assert.Equal(t, input.ExpectedValue, m.StringVal, "not equal for input %v", n)
+			assert.Equal(t, input.ExpectedValue, m.Value, "not equal for input %v", n)
 		case MeasurementTypeBitmask:
-			assert.Equal(t, input.ExpectedValue, []byte{m.BitmaskVal, m.BitsVal}, "not equal for input %v", n)
+			assert.Equal(t, input.ExpectedValue, m.Value, "not equal for input %v", n)
 		default:
 			assert.Fail(t, "unknown type")
 		}

@@ -36,18 +36,14 @@ type Block struct {
 }
 
 type MeasurementValue struct {
-	Type       MeasurementType
-	IntVal     int
-	FloatVal   float64
-	StringVal  string
-	BitsVal    uint8
-	BitmaskVal uint8
-	Units      string
+	Type  MeasurementType
+	Value interface{}
+	Units string
 }
 
 type Measurement struct {
 	Metric Metric
-	Value  *MeasurementValue
+	*MeasurementValue
 }
 
 func (b *Block) convert(group MeasurementGroup) ([]*Measurement, error) {
@@ -57,7 +53,6 @@ func (b *Block) convert(group MeasurementGroup) ([]*Measurement, error) {
 	if len(b.Data) != 9 {
 		return nil, errors.Errorf("measurement data must be 9 bytes but was only %d", len(b.Data))
 	}
-
 
 	measurements := make([]*Measurement, 3)
 	mapping, ok := MeasurementMap[group]
@@ -72,7 +67,7 @@ func (b *Block) convert(group MeasurementGroup) ([]*Measurement, error) {
 		}
 		measurements[n] = &Measurement{
 			Metric: mapping.Metric[n],
-			Value: m,
+			MeasurementValue:  m,
 		}
 	}
 
@@ -94,15 +89,5 @@ func (b *Block) Size() int {
 }
 
 func (m *MeasurementValue) String() string {
-	switch m.Type {
-	case MeasurementTypeInt:
-		return fmt.Sprintf("%v %s", m.IntVal, m.Units)
-	case MeasurementTypeFloat:
-		return fmt.Sprintf("%v %s", m.FloatVal, m.Units)
-	case MeasurementTypeString:
-		return fmt.Sprintf("%s", m.StringVal)
-	case MeasurementTypeBitmask:
-		return fmt.Sprintf("%08b", m.BitsVal&m.BitmaskVal)
-	}
-	return "(unknown type)"
+	return fmt.Sprintf("%v %s", m.Value, m.Units)
 }

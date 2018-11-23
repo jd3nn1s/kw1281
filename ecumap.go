@@ -12,28 +12,28 @@ const (
 type Metric int
 
 const (
-	MeasurementRPM Metric = iota + 1
-	MeasurementCoolantTemp
-	MeasurementBattery
-	MeasurementInjectionTime
-	MeasurementThrottleAngle
-	MeasurementIntakeAirTemp
-	MeasurementSpeed
+	MetricRPM Metric = iota + 1
+	MetricCoolantTemp
+	MetricBatteryVoltage
+	MetricInjectionTime
+	MetricThrottleAngle
+	MetricAirIntakeTemp
+	MetricSpeed
 )
 
 var MeasurementMap = map[MeasurementGroup]struct {
 	Metric [3]Metric
 }{
 	MeasureRPMCoolantTemp: {
-		[3]Metric{MeasurementRPM, MeasurementCoolantTemp, 0},
+		[3]Metric{MetricRPM, MetricCoolantTemp, 0},
 	},
 	MeasureRPMBatteryInjectionTimeBlockNum: {
-		[3]Metric{MeasurementRPM, MeasurementBattery, MeasurementInjectionTime},
+		[3]Metric{MetricRPM, MetricBatteryVoltage, MetricInjectionTime},
 	},
 	MeasureRPMThrottleIntakeAirBlockNum: {
-		[3]Metric{MeasurementRPM, MeasurementThrottleAngle, MeasurementIntakeAirTemp},
+		[3]Metric{MetricRPM, MetricThrottleAngle, MetricAirIntakeTemp},
 	},
 	MeasureRPMSpeedBlockNum: {
-		[3]Metric{MeasurementRPM, MeasurementSpeed, 0},
+		[3]Metric{MetricRPM, MetricSpeed, 0},
 	},
 }

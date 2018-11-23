@@ -10,9 +10,9 @@ import (
 )
 
 type MockSerialPort struct {
-	ReadBuf bytes.Buffer
+	ReadBuf  bytes.Buffer
 	WriteBuf bytes.Buffer
-	closed bool
+	closed   bool
 }
 
 func (port *MockSerialPort) Flush() error {
@@ -65,12 +65,12 @@ func connection() (*Connection, *MockSerialPort) {
 
 	return &Connection{
 		portConfig: &serial.Config{
-			Name: "/dev/fakeport",
-			Baud: portDefaultBaud,
+			Name:        "/dev/fakeport",
+			Baud:        portDefaultBaud,
 			ReadTimeout: 300 * time.Millisecond,
 		},
-		counter: 1,
-		port:m,
+		counter:   1,
+		port:      m,
 		nextBlock: make(chan *Block, 1),
 	}, m
 }
@@ -104,7 +104,7 @@ func TestSendByte(t *testing.T) {
 
 	// wrong echo byte from ECU
 	m.ReadBuf.Reset()
-	m.ReadBuf.WriteByte(testByte+1)
+	m.ReadBuf.WriteByte(testByte + 1)
 	assert.Error(t, c.sendByte(testByte))
 	m.WriteBuf.Reset()
 }
@@ -150,7 +150,7 @@ func TestRecvByte(t *testing.T) {
 	m.ReadBuf.Reset()
 	m.ReadBuf.WriteByte(testByte)
 	// wrong echo of ack
-	m.ReadBuf.WriteByte(complement(testByte)-1)
+	m.ReadBuf.WriteByte(complement(testByte) - 1)
 	_, err = c.recvByte()
 	assert.Error(t, err)
 }
