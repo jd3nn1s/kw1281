@@ -286,7 +286,7 @@ func TestStartCallbacks(t *testing.T) {
 		ECUDetails: func(details *ECUDetails) {
 			cbResults.ECUDetails = true
 		},
-		Measurement: func(groupNum int, measurement *Measurement) {
+		Measurement: func(group MeasurementGroup, measurements []*Measurement) {
 			cbResults.Measurement = true
 		},
 	}
@@ -294,18 +294,24 @@ func TestStartCallbacks(t *testing.T) {
 	c, m := connection()
 	counter := uint8(1)
 
-	// ECU send ACK and get ACK response
-	ecuSendBytes(m, &counter, BlockTypeACK, []byte{})
+	// ECU send ACK on start
 	ecuSendBytes(m, &counter, BlockTypeACK, []byte{})
 
+	// Echo back request for measurement group 1
+	ecuSendBytes(m, &counter, BlockTypeGetMeasurementGroup, []byte{1})
 	// ECU send Measurement and get ACK response
-	ecuSendBytes(m, &counter, BlockTypeGroup, []byte{0x01, 0x30, 0x30})
+	ecuSendBytes(m, &counter, BlockTypeMeasurementGroup, []byte{
+		0x01, 0x30, 0x30, // each metric is 3 bytes
+		0x01, 0x30, 0x30,
+		0x01, 0x30, 0x30})
 	ecuSendBytes(m, &counter, BlockTypeACK, []byte{})
 
 	// ECU send ACK and get ACK response
 	ecuSendBytes(m, &counter, BlockTypeACK, []byte{})
 	ecuSendBytes(m, &counter, BlockTypeACK, []byte{})
 
+	// queue up message group request that will be sent first
+	c.RequestMeasurementGroup(1)
 	err := c.Start(cb)
 	assert.Error(t, err)
 	assert.Equal(t, io.EOF, errors.Cause(err))
@@ -320,7 +326,7 @@ func TestStartErrors(t *testing.T) {
 
 	// ECU send ACK and sends wrong response to ACK
 	ecuSendBytes(m, &counter, BlockTypeACK, []byte{})
-	ecuSendBytes(m, &counter, BlockTypeGroup, []byte{})
+	ecuSendBytes(m, &counter, BlockTypeMeasurementGroup, []byte{})
 
 	err := c.Start(Callbacks{})
 	assert.Error(t, err)
@@ -335,22 +341,26 @@ func TestStartSendRequest(t *testing.T) {
 	ecuSendBytes(m, &counter, BlockTypeACK, []byte{})
 
 	// ECU send ACK for get group
-	ecuSendBytes(m, &counter, BlockTypeGetGroup, []byte{0x03})
-	ecuSendBytes(m, &counter, BlockTypeGroup, []byte{0x03, 0x30, 0x30})
+	ecuSendBytes(m, &counter, BlockTypeGetMeasurementGroup, []byte{byte(MeasureRPMSpeedBlockNum)})
+	ecuSendBytes(m, &counter, BlockTypeMeasurementGroup, []byte{
+		0x01, 0x30, 0x30, // each metric is 3 bytes
+		0x01, 0x30, 0x30,
+		0x01, 0x30, 0x30})
 
 	// send and receive an ACK
 	ecuSendBytes(m, &counter, BlockTypeACK, []byte{})
 	ecuSendBytes(m, &counter, BlockTypeACK, []byte{})
 
-	c.RequestMeasurementGroup(3)
+	c.RequestMeasurementGroup(MeasureRPMSpeedBlockNum)
 
 	cbResults := struct {
 		Measurement bool
 	}{}
 	err := c.Start(Callbacks{
-		Measurement: func(groupNum int, measurement *Measurement) {
+		Measurement: func(group MeasurementGroup, measurements []*Measurement) {
 			cbResults.Measurement = true
-			assert.Equal(t, 3, groupNum)
+			assert.Equal(t, MeasureRPMSpeedBlockNum, group)
+			assert.Len(t, measurements, 3)
 		},
 	})
 	assert.Error(t, err)
@@ -361,14 +371,14 @@ func TestStartSendRequest(t *testing.T) {
 	buf := make([]byte, 32)
 	n, err := m.WriteBuf.Read(buf)
 	assert.NoError(t, err)
-	assert.True(t, n >= minBlkLength + 4, "n is only %v", n)
+	assert.True(t, n >= minBlkLength+4, "n is only %v", n)
 	// skip over first ACK of ACK
 	buf = buf[minBlkLength:]
 
 	// now check that the next block is the request for measurement block
 	length := int(buf[0])
 	assert.Equal(t, 4, length)
-	assert.Equal(t, byte(BlockTypeGetGroup), buf[2], "block type is incorrect")
-	assert.Equal(t, byte(0x3), buf[3], "group is incorrect")
+	assert.Equal(t, byte(BlockTypeGetMeasurementGroup), buf[2], "block type is incorrect")
+	assert.Equal(t, byte(0x4), buf[3], "group is incorrect")
 	assert.Equal(t, byte(BlockEnd), buf[4])
 }

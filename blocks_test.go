@@ -50,12 +50,8 @@ func TestConvert(t *testing.T) {
 		{[]byte{0x10, 0x1f, 0x02}, MeasurementTypeBitmask, []byte{0x2, 0x1f}},
 		{[]byte{0x10, 0x1b, 0x01}, MeasurementTypeBitmask, []byte{0x1, 0x1b}}}
 
-	b := &Block{
-		Type: BlockTypeGroup,
-	}
 	for n, input := range testInputs {
-		b.Data = input.Data
-		m, err := b.convert()
+		m, err := dataToType(input.Data)
 		assert.NoError(t, err)
 		assert.Equal(t, input.ExpectedType, m.Type, "wrong type for input %v", n)
 
@@ -72,22 +68,53 @@ func TestConvert(t *testing.T) {
 			assert.Fail(t, "unknown type")
 		}
 
+		units := m.String()
 		if m.Type != MeasurementTypeBitmask && m.Type != MeasurementTypeString {
-			assert.Contains(t, m.String(), m.Units)
+			assert.Contains(t, units, m.Units)
 		}
 	}
+
+	_, err := dataToType([]byte{0xff, 0xff, 0xff})
+	assert.Error(t, err, "no error returned with bad transformation")
 }
 
-func TestWrongBlockType(t *testing.T) {
+func TestBlockData(t *testing.T) {
+	b := &Block{
+		Type: BlockTypeMeasurementGroup,
+		Data: []byte{
+			0x0f, 0x0a, 0x28,
+			0x0f, 0x0a, 0x28,
+			0x0f, 0x0a, 0x28,
+		},
+	}
+	_, err := b.convert(MeasureRPMCoolantTemp)
+	assert.NoError(t, err)
+
+	_, err = b.convert(5000)
+	assert.Error(t, err, "invalid group with valid block didn't error")
+
+	b.Data[0] = 0x99
+	_, err = b.convert(MeasureRPMCoolantTemp)
+	assert.Error(t, err, "invalid transformation function not detected by convert")
+}
+
+func TestWrongBlockData(t *testing.T) {
 	b := &Block{
 		Type: BlockTypeASCII,
 	}
-	_, err := b.convert()
+	_, err := b.convert(MeasureRPMCoolantTemp)
+	assert.Error(t, err)
+
+	b = &Block{
+		Type: BlockTypeMeasurementGroup,
+		Data: []byte{},
+	}
+	_, err = b.convert(MeasureRPMCoolantTemp)
 	assert.Error(t, err)
 }
 
 func TestWrongMeasurementType(t *testing.T) {
-	b := &Measurement{
+	b := &MeasurementValue{
 		Type: MeasurementType(100),
 	}
 	assert.NotEmpty(t, b.String())

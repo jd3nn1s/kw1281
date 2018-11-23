@@ -45,7 +45,7 @@ type ECUDetails struct {
 
 type Callbacks struct {
 	ECUDetails  func(*ECUDetails)
-	Measurement func(groupNum int, measurement *Measurement)
+	Measurement func(group MeasurementGroup, measurements []*Measurement)
 }
 
 func Connect(portName string) (*Connection, error) {
@@ -318,6 +318,7 @@ func (c *Connection) Start(cb Callbacks) error {
 	if cb.ECUDetails != nil {
 		cb.ECUDetails(c.ecuDetails)
 	}
+	var measurementGroup MeasurementGroup
 	for {
 		blk, err := c.recvBlock()
 		if err != nil {
@@ -333,16 +334,21 @@ func (c *Connection) Start(cb Callbacks) error {
 		}
 
 		switch blk.Type {
-		case BlockTypeGroup:
-			m, err := blk.convert()
+		case BlockTypeMeasurementGroup:
+			// always sends measurement group blocks in response to a request therefore
+			// a received group is for the last group we sent.
+			m, err := blk.convert(measurementGroup)
 			if err != nil {
 				return errors.Wrapf(err, "unable to decode measuring block")
 			}
 			if cb.Measurement != nil {
-				cb.Measurement(int(blk.Data[0]), m)
+				cb.Measurement(measurementGroup, m)
 			}
 		}
 
+		if sendBlk.Type == BlockTypeGetMeasurementGroup {
+			measurementGroup = MeasurementGroup(sendBlk.Data[0])
+		}
 		if err := c.sendBlock(sendBlk); err != nil {
 			return errors.Wrapf(err, "unable to send block type %v in response to block type %v",
 				sendBlk.Type, blk.Type)
@@ -350,9 +356,9 @@ func (c *Connection) Start(cb Callbacks) error {
 	}
 }
 
-func (c *Connection) RequestMeasurementGroup(groupNum int) {
+func (c *Connection) RequestMeasurementGroup(group MeasurementGroup) {
 	c.nextBlock <- &Block{
-		Type: BlockTypeGetGroup,
-		Data: []byte{byte(groupNum)},
+		Type: BlockTypeGetMeasurementGroup,
+		Data: []byte{byte(group)},
 	}
 }

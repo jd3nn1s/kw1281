@@ -8,15 +8,15 @@ import (
 type BlockType byte
 
 const (
-	BlockTypeClearErrors BlockType = 0x05
-	BlockTypeGetErrors             = 0x07
-	BlockTypeErrors                = 0xfc
-	BlockTypeEndOutput             = 0x06
-	BlockTypeACK                   = 0x09
-	BlockTypeGetGroup              = 0x29
-	BlockTypeGroup                 = 0xe7
-	BlockTypeASCII                 = 0xf6
-	BlockTypeNull                  = 0x00
+	BlockTypeClearErrors         BlockType = 0x05
+	BlockTypeGetErrors                     = 0x07
+	BlockTypeErrors                        = 0xfc
+	BlockTypeEndOutput                     = 0x06
+	BlockTypeACK                           = 0x09
+	BlockTypeGetMeasurementGroup           = 0x29
+	BlockTypeMeasurementGroup              = 0xe7
+	BlockTypeASCII                         = 0xf6
+	BlockTypeNull                          = 0x00
 
 	BlockEnd byte = 0x03
 )
@@ -35,7 +35,7 @@ type Block struct {
 	Data []byte
 }
 
-type Measurement struct {
+type MeasurementValue struct {
 	Type       MeasurementType
 	IntVal     int
 	FloatVal   float64
@@ -45,20 +45,47 @@ type Measurement struct {
 	Units      string
 }
 
-func (b *Block) convert() (*Measurement, error) {
-	if b.Type != BlockTypeGroup {
+type Measurement struct {
+	Metric Metric
+	Value  *MeasurementValue
+}
+
+func (b *Block) convert(group MeasurementGroup) ([]*Measurement, error) {
+	if b.Type != BlockTypeMeasurementGroup {
 		return nil, errors.New("can only convert measurement blocks")
 	}
-	if len(b.Data) != 3 {
-		return nil, errors.Errorf("measurement data must be 3 bytes but was only %d", len(b.Data))
+	if len(b.Data) != 9 {
+		return nil, errors.Errorf("measurement data must be 9 bytes but was only %d", len(b.Data))
 	}
 
-	fn, ok := transformationMap[b.Data[0]]
+
+	measurements := make([]*Measurement, 3)
+	mapping, ok := MeasurementMap[group]
 	if !ok {
-		return nil, errors.Errorf("unknown measurement block transformation: %d", b.Data[0])
+		return nil, errors.Errorf("unknown measurement group %d", group)
 	}
-	ret := fn(b.Data[1], b.Data[2])
-	return &ret, nil
+
+	for n, data := range [][]byte{b.Data[0:3], b.Data[3:6], b.Data[6:9]} {
+		m, err := dataToType(data)
+		if err != nil {
+			return nil, err
+		}
+		measurements[n] = &Measurement{
+			Metric: mapping.Metric[n],
+			Value: m,
+		}
+	}
+
+	return measurements, nil
+}
+
+func dataToType(data []byte) (*MeasurementValue, error) {
+	fn, ok := transformationMap[data[0]]
+	if !ok {
+		return nil, errors.Errorf("unknown measurement block transformation: %d", data[0])
+	}
+	val := fn(data[1], data[2])
+	return &val, nil
 }
 
 func (b *Block) Size() int {
@@ -66,7 +93,7 @@ func (b *Block) Size() int {
 	return len(b.Data) + 3
 }
 
-func (m *Measurement) String() string {
+func (m *MeasurementValue) String() string {
 	switch m.Type {
 	case MeasurementTypeInt:
 		return fmt.Sprintf("%v %s", m.IntVal, m.Units)
