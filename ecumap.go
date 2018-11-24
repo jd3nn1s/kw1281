@@ -22,18 +22,18 @@ const (
 )
 
 var MeasurementMap = map[MeasurementGroup]struct {
-	Metric [3]Metric
+	Metric [4]Metric
 }{
 	GroupRPMCoolantTemp: {
-		[3]Metric{MetricRPM, MetricCoolantTemp, 0},
+		[4]Metric{MetricRPM, MetricCoolantTemp, 0, 0},
 	},
 	GroupRPMBatteryInjectionTimeBlockNum: {
-		[3]Metric{MetricRPM, MetricBatteryVoltage, MetricInjectionTime},
+		[4]Metric{MetricRPM, MetricBatteryVoltage, MetricInjectionTime, 0},
 	},
 	GroupRPMThrottleIntakeAirBlockNum: {
-		[3]Metric{MetricRPM, MetricThrottleAngle, MetricAirIntakeTemp},
+		[4]Metric{MetricRPM, MetricThrottleAngle, MetricAirIntakeTemp, 0},
 	},
 	GroupRPMSpeedBlockNum: {
-		[3]Metric{MetricRPM, MetricSpeed, 0},
+		[4]Metric{MetricRPM, MetricSpeed, 0, 0},
 	},
 }

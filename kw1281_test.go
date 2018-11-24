@@ -320,6 +320,7 @@ func TestStartCallbacks(t *testing.T) {
 	ecuSendBytes(m, &counter, BlockTypeMeasurementGroup, []byte{
 		0x01, 0x30, 0x30, // each metric is 3 bytes
 		0x01, 0x30, 0x30,
+		0x01, 0x30, 0x30,
 		0x01, 0x30, 0x30})
 	ecuSendBytes(m, &counter, BlockTypeACK, []byte{})
 
@@ -362,6 +363,7 @@ func TestStartSendRequest(t *testing.T) {
 	ecuSendBytes(m, &counter, BlockTypeMeasurementGroup, []byte{
 		0x01, 0x30, 0x30, // each metric is 3 bytes
 		0x01, 0x30, 0x30,
+		0x01, 0x30, 0x30,
 		0x01, 0x30, 0x30})
 
 	// send and receive an ACK
@@ -377,7 +379,7 @@ func TestStartSendRequest(t *testing.T) {
 		Measurement: func(group MeasurementGroup, measurements []*Measurement) {
 			cbResults.Measurement = true
 			assert.Equal(t, GroupRPMSpeedBlockNum, group)
-			assert.Len(t, measurements, 3)
+			assert.Len(t, measurements, 4)
 		},
 	})
 	assert.Error(t, err)

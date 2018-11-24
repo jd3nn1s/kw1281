@@ -40,17 +40,17 @@ func (b *Block) convert(group MeasurementGroup) ([]*Measurement, error) {
 	if b.Type != BlockTypeMeasurementGroup {
 		return nil, errors.New("can only convert measurement blocks")
 	}
-	if len(b.Data) != 9 {
-		return nil, errors.Errorf("measurement data must be 9 bytes but was only %d", len(b.Data))
+	if len(b.Data) != 12 {
+		return nil, errors.Errorf("measurement data must be 12 bytes but was %d", len(b.Data))
 	}
 
-	measurements := make([]*Measurement, 3)
+	measurements := make([]*Measurement, 4)
 	mapping, ok := MeasurementMap[group]
 	if !ok {
 		return nil, errors.Errorf("unknown measurement group %d", group)
 	}
 
-	for n, data := range [][]byte{b.Data[0:3], b.Data[3:6], b.Data[6:9]} {
+	for n, data := range [][]byte{b.Data[0:3], b.Data[3:6], b.Data[6:9], b.Data[9:12]} {
 		m, err := dataToType(data)
 		if err != nil {
 			return nil, err

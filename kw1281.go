@@ -40,6 +40,7 @@ type Connection struct {
 	counter    uint8
 	ecuDetails *ECUDetails
 	nextBlock  chan *Block
+	done       chan struct{}
 }
 
 type ECUDetails struct {
@@ -63,6 +64,7 @@ func Connect(portName string) (*Connection, error) {
 		portConfig: c,
 		// buffer of 1
 		nextBlock: make(chan *Block, 1),
+		done:      make(chan struct{}),
 	}
 
 	var err error
@@ -104,6 +106,10 @@ func (c *Connection) open() error {
 }
 
 func (c *Connection) Close() error {
+	if c.done != nil {
+		close(c.done)
+		c.done = nil
+	}
 	if c.port != nil {
 		return c.port.Close()
 	}
@@ -376,9 +382,14 @@ func (c *Connection) Start(ctx context.Context, cb Callbacks) error {
 	}
 }
 
-func (c *Connection) RequestMeasurementGroup(group MeasurementGroup) {
-	c.nextBlock <- &Block{
+func (c *Connection) RequestMeasurementGroup(group MeasurementGroup) error {
+	select {
+	case <-c.done:
+		return errors.New("connection closed")
+	case c.nextBlock <- &Block{
 		Type: BlockTypeGetMeasurementGroup,
 		Data: []byte{byte(group)},
+	}:
+		return nil
 	}
 }
