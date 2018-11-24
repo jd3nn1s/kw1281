@@ -92,13 +92,22 @@ func (c *Connection) open() error {
 	var err error
 	c.port, err = openPort(c.portConfig)
 	if err != nil {
+		c.port = nil
 		return err
 	}
-	return c.port.Flush()
+	err = c.port.Flush()
+	if err != nil {
+		c.port.Close()
+		c.port = nil
+	}
+	return err
 }
 
 func (c *Connection) Close() error {
-	return c.port.Close()
+	if c.port != nil {
+		return c.port.Close()
+	}
+	return nil
 }
 
 /*
