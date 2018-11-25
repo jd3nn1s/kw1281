@@ -28,12 +28,12 @@ var MeasurementMap = map[MeasurementGroup]struct {
 		[4]Metric{MetricRPM, MetricCoolantTemp, 0, 0},
 	},
 	GroupRPMBatteryInjectionTimeBlockNum: {
-		[4]Metric{MetricRPM, MetricBatteryVoltage, MetricInjectionTime, 0},
+		[4]Metric{MetricRPM, MetricInjectionTime, MetricBatteryVoltage, 0},
 	},
 	GroupRPMThrottleIntakeAirBlockNum: {
-		[4]Metric{MetricRPM, MetricThrottleAngle, MetricAirIntakeTemp, 0},
+		[4]Metric{MetricRPM, 0, MetricThrottleAngle, MetricAirIntakeTemp},
 	},
 	GroupRPMSpeedBlockNum: {
-		[4]Metric{MetricRPM, MetricSpeed, 0, 0},
+		[4]Metric{MetricRPM, 0, MetricSpeed, 0},
 	},
 }
